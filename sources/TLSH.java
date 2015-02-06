@@ -7,23 +7,47 @@
  * LicenseName: Apache-2.0
  * FileName: TLSH.java  
  * FileCopyrightText: <text> Copyright 2014 Vasiliy Vadimov, Nuno Brito </text>
- * FileComment: <text> Java version of the TLSH similarity hashing algorithm </text> 
+ * FileCopyrightText: <text> Copyright 2013 Trend Micro Incorporated </text>
+ * FileComment: <text> Java version of the TLSH similarity hashing algorithm.
+    
+    This code was based on the TLSH implementation from TrendMicro that is
+    available on the following repository: https://github.com/trendmicro/tlsh
+
+    The original source header indicates: 
+/*
+ * Copyright 2013 Trend Micro Incorporated
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+    
+    </text> 
  */
 
-public class TLSH {
-	final private int	BUCKETS 		= 256;
-	final private int	EFF_BUCKETS 		= 128;
-	final private int	CODE_SIZE 		= 32;
-	final private int	TLSH_CHECKSUM_LEN 	= 1;
-	final private int	TLSH_STRING_LEN 	= 70;
-	final private int	SLIDING_WND_SIZE 	= 5;
-	final private int	RANGE_LVALUE		= 256;
-	final private int	RANGE_QRATIO		= 16;
-	final private float	LOG_1_5 = 0.4054651f;
-	final private float	LOG_1_3 = 0.26236426f;
-	final private float	LOG_1_1 = 0.095310180f;
+import java.util.Arrays;
 
-	final private int []	vTable = {
+public class TLSH {
+	static final private int	BUCKETS 		= 256;
+	static final private int	EFF_BUCKETS 		= 128;
+	static final private int	CODE_SIZE 		= 32;
+	static final private int	TLSH_CHECKSUM_LEN 	= 1;
+	static final private int	TLSH_STRING_LEN 	= 70;
+	static final private int	SLIDING_WND_SIZE 	= 5;
+	static final private int	RANGE_LVALUE		= 256;
+	static final private int	RANGE_QRATIO		= 16;
+	static final private float	LOG_1_5 = 0.4054651f;
+	static final private float	LOG_1_3 = 0.26236426f;
+	static final private float	LOG_1_1 = 0.095310180f;
+
+	static final private int []	vTable = {
 		(int)1, (int)87, (int)49, (int)12, (int)176, (int)178, (int)102, (int)166, (int)121, (int)193, (int)6, (int)84, (int)249, (int)230, (int)44, (int)163,
 		(int)14, (int)197, (int)213, (int)181, (int)161, (int)85, (int)218, (int)80, (int)64, (int)239, (int)24, (int)226, (int)236, (int)142, (int)38, (int)200,
 		(int)110, (int)177, (int)104, (int)103, (int)141, (int)253, (int)255, (int)50, (int)77, (int)101, (int)81, (int)18, (int)45, (int)96, (int)31, (int)222,
@@ -42,7 +66,7 @@ public class TLSH {
 		(int)51, (int)65, (int)28, (int)144, (int)254, (int)221, (int)93, (int)189, (int)194, (int)139, (int)112, (int)43, (int)71, (int)109, (int)184, (int)209
 	};
 
-	static private int [][] bitPairsDiffTable = null;
+	static private int [][] bitPairsDiffTable;
 
 	private class LshBinStruct {
 		public int [] 	checksum = new int [TLSH_CHECKSUM_LEN];
@@ -68,6 +92,7 @@ public class TLSH {
 	}
 
 	private int []		aBucket = null;
+	final private int [] 	slideWindow = new int [SLIDING_WND_SIZE];
 	private int		dataLen = 0;
 	private boolean		lshCodeValid = false; 
 	LshBinStruct	lshBin = new LshBinStruct();
@@ -89,6 +114,14 @@ public class TLSH {
 			ret += Integer.toHexString(buf[i]);
 		}
 		return ret.toUpperCase();
+	}
+
+	static private int [] fromHex(String s) {
+		int [] ret = new int [s.length() / 2];
+		for (int i = 0; i < s.length(); i += 2) {
+			ret[i / 2] = Integer.parseInt(s.substring(i, i + 2), 16);
+		}
+		return ret;
 	}
 
 	private int bMapping(int salt, int i, int j, int k) {
@@ -228,7 +261,7 @@ public class TLSH {
 		return (int) (i & 0xFF);
 	}
 	
-	private int modDiff(int x, int y, int R){
+	static private int modDiff(int x, int y, int R){
 		int dl;
 		int dr;
 		if (y > x){
@@ -243,7 +276,7 @@ public class TLSH {
 		return dl;
 	}
 
-	private int hDistance(int [] x, int [] y)
+	static private int hDistance(int [] x, int [] y)
 	{
 		int diff = 0;
 		for (int i = 0; i < x.length; i++) {
@@ -252,69 +285,79 @@ public class TLSH {
 		return diff;
 	}
 
-	/* class interface, public methods */
 
-	public TLSH() {
-		/* read data from file */
-		if (bitPairsDiffTable == null) {
-			bitPairsDiffTable = new int [256][256];
-			for (int i = 0; i < 256; i++) {
-				for (int j = 0; j < 256; j++) {
-					int x = i, y = j, d, diff = 0;
-					d = Math.abs(x % 4 - y % 4); diff += (d == 3 ? 6 : d);
-					x /= 4; y /= 4;
-					d = Math.abs(x % 4 - y % 4); diff += (d == 3 ? 6 : d);
-					x /= 4; y /= 4;
-					d = Math.abs(x % 4 - y % 4); diff += (d == 3 ? 6 : d);
-					x /= 4; y /= 4;
-					d = Math.abs(x % 4 - y % 4); diff += (d == 3 ? 6 : d);
-					bitPairsDiffTable[i][j] = diff;
-				}
-			}
-		}
-	}
+    public static int[][] generateTable(){
+        int[][] result = new int [256][256];
+        for (int i = 0; i < 256; i++) {
+            for (int j = 0; j < 256; j++) {
+                int x = i, y = j, d, diff = 0;
+                d = Math.abs(x % 4 - y % 4); diff += (d == 3 ? 6 : d);
+                x /= 4; y /= 4;
+                d = Math.abs(x % 4 - y % 4); diff += (d == 3 ? 6 : d);
+                x /= 4; y /= 4;
+                d = Math.abs(x % 4 - y % 4); diff += (d == 3 ? 6 : d);
+                x /= 4; y /= 4;
+                d = Math.abs(x % 4 - y % 4); diff += (d == 3 ? 6 : d);
+                result[i][j] = diff;
+            }
+        }  
+        return result;
+    }    
+    /**
+     * The default generator
+     */
+    public TLSH() {
+        bitPairsDiffTable = generateTable();
+    }
+        
+    /**
+     * class interface, public methods 
+     * @param assignedBitPairsDiffTable
+     */
+    public TLSH(final int[][] assignedBitPairsDiffTable) {
+        bitPairsDiffTable = assignedBitPairsDiffTable;
+    }
 
-	public void update(String data) {
-		int j = this.dataLen % SLIDING_WND_SIZE;
-		int fedLen = this.dataLen;
-		if (this.aBucket == null) {
-			this.aBucket = new int [BUCKETS];
-		}
-		int [] slideWindow = new int [SLIDING_WND_SIZE];
-		for (int i = 0; i < data.length(); i++) {
-			slideWindow[j] = (int)data.charAt(i);
-			if (fedLen >= 4) {
-				int j1 = (j + SLIDING_WND_SIZE - 1) % SLIDING_WND_SIZE;
-				int j2 = (j + SLIDING_WND_SIZE - 2) % SLIDING_WND_SIZE;
-				int j3 = (j + SLIDING_WND_SIZE - 3) % SLIDING_WND_SIZE;
-				int j4 = (j + SLIDING_WND_SIZE - 4) % SLIDING_WND_SIZE;
-				for (int k = 0; k < TLSH_CHECKSUM_LEN; k++) {
-					if (k == 0) {
-						this.lshBin.checksum[k] = bMapping((int) 0, slideWindow[j], slideWindow[j1], this.lshBin.checksum[k]);
-					} else {
-						this.lshBin.checksum[k] = bMapping(this.lshBin.checksum[k - 1], slideWindow[j], slideWindow[j1], this.lshBin.checksum[k]);
-					}
-				}
-				int r;
-			   	r = bMapping((int)2, slideWindow[j], slideWindow[j1], slideWindow[j2]);
-				this.aBucket[r]++;
-				r = bMapping((int)3, slideWindow[j], slideWindow[j1], slideWindow[j3]);
-				this.aBucket[r]++;
-				r = bMapping((int)5, slideWindow[j], slideWindow[j2], slideWindow[j3]);
-				this.aBucket[r]++;
-				r = bMapping((int) 7, slideWindow[j], slideWindow[j2], slideWindow[j4]);
-				this.aBucket[r]++;
-				r = bMapping((int) 11, slideWindow[j], slideWindow[j1], slideWindow[j4]);
-				this.aBucket[r]++;
-				r = bMapping((int) 13, slideWindow[j], slideWindow[j3], slideWindow[j4]);
-				this.aBucket[r]++;
-			}
+    public void update(final String data) {
+            int j = this.dataLen % SLIDING_WND_SIZE;
+            int fedLen = this.dataLen;
+            if (this.aBucket == null) {
+                    this.aBucket = new int [BUCKETS];
+            }
+            for (int i = 0; i < data.length(); i++) {
+                    slideWindow[j] = (int)(data.charAt(i) & 0xff);
+                    if (fedLen >= 4) {
+                            int j1 = (j + SLIDING_WND_SIZE - 1) % SLIDING_WND_SIZE;
+                            int j2 = (j + SLIDING_WND_SIZE - 2) % SLIDING_WND_SIZE;
+                            int j3 = (j + SLIDING_WND_SIZE - 3) % SLIDING_WND_SIZE;
+                            int j4 = (j + SLIDING_WND_SIZE - 4) % SLIDING_WND_SIZE;
+                            for (int k = 0; k < TLSH_CHECKSUM_LEN; k++) {
+                                    if (k == 0) {
+                                            this.lshBin.checksum[k] = bMapping((int) 0, slideWindow[j], slideWindow[j1], this.lshBin.checksum[k]);
+                                    } else {
+                                            this.lshBin.checksum[k] = bMapping(this.lshBin.checksum[k - 1], slideWindow[j], slideWindow[j1], this.lshBin.checksum[k]);
+                                    }
+                            }
+                            int r;
+                            r = bMapping((int)2, slideWindow[j], slideWindow[j1], slideWindow[j2]);
+                            this.aBucket[r]++;
+                            r = bMapping((int)3, slideWindow[j], slideWindow[j1], slideWindow[j3]);
+                            this.aBucket[r]++;
+                            r = bMapping((int)5, slideWindow[j], slideWindow[j2], slideWindow[j3]);
+                            this.aBucket[r]++;
+                            r = bMapping((int) 7, slideWindow[j], slideWindow[j2], slideWindow[j4]);
+                            this.aBucket[r]++;
+                            r = bMapping((int) 11, slideWindow[j], slideWindow[j1], slideWindow[j4]);
+                            this.aBucket[r]++;
+                            r = bMapping((int) 13, slideWindow[j], slideWindow[j3], slideWindow[j4]);
+                            this.aBucket[r]++;
+                    }
 
-			fedLen++;
-			j = (j + SLIDING_WND_SIZE + 1) % SLIDING_WND_SIZE;
-		}
-		this.dataLen += data.length();
-	}
+                    fedLen++;
+                    j = (j + SLIDING_WND_SIZE + 1) % SLIDING_WND_SIZE;
+            }
+            this.dataLen += data.length();
+    }
 
 	public void update(byte [] data) {
 		int j = this.dataLen % SLIDING_WND_SIZE;
@@ -322,9 +365,8 @@ public class TLSH {
 		if (this.aBucket == null) {
 			this.aBucket = new int [BUCKETS];
 		}
-		int [] slideWindow = new int [SLIDING_WND_SIZE];
 		for (int i = 0; i < data.length; i++) {
-			slideWindow[j] = (int)data[i];
+                    slideWindow[j] = (int)data[i] & 0xff;
 			if (fedLen >= 4) {
 				int j1 = (j + SLIDING_WND_SIZE - 1) % SLIDING_WND_SIZE;
 				int j2 = (j + SLIDING_WND_SIZE - 2) % SLIDING_WND_SIZE;
@@ -332,7 +374,7 @@ public class TLSH {
 				int j4 = (j + SLIDING_WND_SIZE - 4) % SLIDING_WND_SIZE;
 				for (int k = 0; k < TLSH_CHECKSUM_LEN; k++) {
 					if (k == 0) {
-						this.lshBin.checksum[k] = bMapping((int) 0, slideWindow[j], slideWindow[j1], this.lshBin.checksum[k]);
+						this.lshBin.checksum[k] = bMapping(0, slideWindow[j], slideWindow[j1], this.lshBin.checksum[k]);
 					} else {
 						this.lshBin.checksum[k] = bMapping(this.lshBin.checksum[k - 1], slideWindow[j], slideWindow[j1], this.lshBin.checksum[k]);
 					}
@@ -357,6 +399,7 @@ public class TLSH {
 		}
 		this.dataLen += data.length;
 	}
+	
 	public void finale() { /* word final is reserved */
 		if (this.dataLen < 512) {
 			this.aBucket = null;
@@ -469,8 +512,46 @@ public class TLSH {
 		return diff;
 	}
 
-	/* this method for testing only */
-	/* coincides with simple_unit */
+	static final public int totalDiff(final String hash1, 
+                final String hash2, final boolean lenDiff) {
+		int diff = 0;
+		int [] iHash1 = fromHex(hash1);
+		int [] iHash2 = fromHex(hash2);
+		
+		if (lenDiff) {
+			int ldiff = modDiff(iHash1[TLSH_CHECKSUM_LEN], iHash2[TLSH_CHECKSUM_LEN], RANGE_LVALUE);
+			if (ldiff == 0)
+				diff = 0;
+			else if (ldiff == 1)
+				diff = 1;
+			else
+				diff += ldiff * 12;
+		}
+		
+		int q1diff = modDiff(iHash1[TLSH_CHECKSUM_LEN + 1] & 0xf, iHash2[TLSH_CHECKSUM_LEN + 1] & 0xf, RANGE_QRATIO);
+		if (q1diff <= 1)
+			diff += q1diff;
+		else		   
+			diff += (q1diff - 1) * 12;
+		
+		int q2diff = modDiff(iHash1[TLSH_CHECKSUM_LEN + 1] >> 4, iHash2[TLSH_CHECKSUM_LEN + 1] >> 4, RANGE_QRATIO);
+		if (q2diff <= 1)
+			diff += q2diff;
+		else
+			diff += (q2diff - 1) * 12;
+		
+		for (int k = 0; k < TLSH_CHECKSUM_LEN; k++) {	
+			if (iHash1[k] != iHash2[k]) {
+				diff++;
+				break;
+			}
+		}
+		
+		diff += hDistance(Arrays.copyOfRange(iHash1, TLSH_CHECKSUM_LEN + 2, iHash1.length), Arrays.copyOfRange(iHash2, TLSH_CHECKSUM_LEN + 2, iHash2.length));
+	
+		return diff;
+	}
+
 	public static void main(String [] args) {
 		try {
 			TLSH ti1 = new TLSH();
