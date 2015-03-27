@@ -39,12 +39,11 @@ public class Test {
         TLSH t059 = getData(new File("test", "mysql-4059.cc"));
         TLSH t308 = getData(new File("test", "mysql-4308.cc"));
         
-        System.out.println("059 vs Vuln. code: "  + t059.totalDiff(t051, false));
-        System.out.println("059 vs Fixed code: "  + t059.totalDiff(t052, false));
-        System.out.println("308 vs Vuln. code: "  + t308.totalDiff(t051, false));
-        System.out.println("308 vs Fixed code: "  + t308.totalDiff(t052, false));
+        System.out.println("059 vs Vuln. distance: "  + t059.totalDiff(t051, false));
+        System.out.println("059 vs Fixed distance: "  + t059.totalDiff(t052, false));
+        System.out.println("308 vs Vuln. distance: "  + t308.totalDiff(t051, false));
+        System.out.println("308 vs Fixed distance: "  + t308.totalDiff(t052, false));
         
-        System.exit(0);
     }
 	
     
