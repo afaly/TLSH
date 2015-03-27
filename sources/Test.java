@@ -5,7 +5,7 @@ import java.io.File;
 
 /*
  * SPDXVersion: SPDX-1.1
-  Creator: Person: Nuno Brito
+ * Creator: Person: Nuno Brito
  * Creator: Organization: TripleCheck (contact@triplecheck.de)
  * Created: 2015-01-08T01:26:56Z
  * LicenseName: Apache-2.0
