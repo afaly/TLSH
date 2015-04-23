@@ -9,7 +9,6 @@ import java.io.File;
  * Creator: Organization: TripleCheck (contact@triplecheck.de)
  * Created: 2015-01-08T01:26:56Z
  * LicenseName: Apache-2.0
- * FileName: Test.java  
  * FileCopyrightText: <text> Copyright 2015 Nuno Brito </text>
  * FileComment: <text> Testing the TLSH algorithm </text> 
  */
