@@ -39,7 +39,6 @@ public class TLSH {
 	static final private int	EFF_BUCKETS 		= 128;
 	static final private int	CODE_SIZE 		= 32;
 	static final private int	TLSH_CHECKSUM_LEN 	= 1;
-	static final private int	TLSH_STRING_LEN 	= 70;
 	static final private int	SLIDING_WND_SIZE 	= 5;
 	static final private int	RANGE_LVALUE		= 256;
 	static final private int	RANGE_QRATIO		= 16;
