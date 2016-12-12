@@ -32,14 +32,11 @@
     </text> 
  */
 
-import java.util.Arrays;
-
 public class TLSH {
 	static final private int	BUCKETS 		= 256;
 	static final private int	EFF_BUCKETS 		= 128;
 	static final private int	CODE_SIZE 		= 32;
 	static final private int	TLSH_CHECKSUM_LEN 	= 1;
-	static final private int	TLSH_STRING_LEN 	= 70;
 	static final private int	SLIDING_WND_SIZE 	= 5;
 	static final private int	RANGE_LVALUE		= 256;
 	static final private int	RANGE_QRATIO		= 16;
@@ -68,29 +65,6 @@ public class TLSH {
 
 	static private int [][] bitPairsDiffTable;
 
-	private class LshBinStruct {
-		public int [] 	checksum = new int [TLSH_CHECKSUM_LEN];
-		public int	lValue = 0;
-		public int	Q = 0;
-		public int []	tmpCode = new int [CODE_SIZE];
-
-		public int getQLo() {
-			return (int)(Q & 0x0F);
-		}
-
-		public int getQHi() {
-			return (int)((Q & 0xF0) >> 4);
-		}
-
-		public void setQLo(int x) {
-			Q = (int)((Q & 0xF0) | (x & 0x0F));
-		}
-
-		public void setQHi(int x) {
-			Q = (int)((Q & 0x0F) | ((x & 0x0F) << 4));
-		}
-	}
-
 	private int []		aBucket = null;
 	final private int [] 	slideWindow = new int [SLIDING_WND_SIZE];
 	private int		dataLen = 0;
@@ -100,7 +74,7 @@ public class TLSH {
 
 	/* non interface methods */
 
-	private int swapByte(int a) {
+	private static int swapByte(int a) {
 		int ret = (int) (((a & 0xF0) >> 4) & 0x0F);
 		ret |= ((a & 0x0F) << 4) & 0xF0;
 		return ret;
@@ -476,10 +450,14 @@ public class TLSH {
 	}
 
 	final public int totalDiff(TLSH other, boolean lenDiff) {
+		return totalDiff(this.lshBin, other.lshBin, lenDiff);
+	}
+	
+	static final private int totalDiff(LshBinStruct lsh1, LshBinStruct lsh2, boolean lenDiff) {
 		int diff = 0;
 		
 		if (lenDiff) {
-			int ldiff = modDiff(lshBin.lValue, other.lshBin.lValue, RANGE_LVALUE);
+			int ldiff = modDiff(lsh1.lValue, lsh2.lValue, RANGE_LVALUE);
 			if (ldiff == 0)
 				diff = 0;
 			else if (ldiff == 1)
@@ -488,68 +466,55 @@ public class TLSH {
 				diff += ldiff * 12;
 		}
 		
-		int q1diff = modDiff(lshBin.getQLo(), other.lshBin.getQLo(), RANGE_QRATIO);
+		int q1diff = modDiff(lsh1.getQLo(), lsh2.getQLo(), RANGE_QRATIO);
 		if (q1diff <= 1)
 			diff += q1diff;
 		else		   
 			diff += (q1diff - 1) * 12;
 		
-		int q2diff = modDiff(lshBin.getQHi(), other.lshBin.getQHi(), RANGE_QRATIO);
+		int q2diff = modDiff(lsh1.getQHi(), lsh2.getQHi(), RANGE_QRATIO);
 		if (q2diff <= 1)
 			diff += q2diff;
 		else
 			diff += (q2diff - 1) * 12;
 		
 		for (int k = 0; k < TLSH_CHECKSUM_LEN; k++) {	
-			if (lshBin.checksum[k] != other.lshBin.checksum[k]) {
+			if (lsh1.checksum[k] != lsh2.checksum[k]) {
 				diff++;
 				break;
 			}
 		}
 		
-		diff += hDistance(lshBin.tmpCode, other.lshBin.tmpCode);
+		diff += hDistance(lsh1.tmpCode, lsh2.tmpCode);
 	
 		return diff;
 	}
 
-	static final public int totalDiff(final String hash1, 
-                final String hash2, final boolean lenDiff) {
-		int diff = 0;
-		int [] iHash1 = fromHex(hash1);
-		int [] iHash2 = fromHex(hash2);
+	static final public int totalDiff(final String hash1, final String hash2, final boolean lenDiff) {
+		LshBinStruct lsh1 = fromTlshStr(hash1);
+		LshBinStruct lsh2 = fromTlshStr(hash2);
 		
-		if (lenDiff) {
-			int ldiff = modDiff(iHash1[TLSH_CHECKSUM_LEN], iHash2[TLSH_CHECKSUM_LEN], RANGE_LVALUE);
-			if (ldiff == 0)
-				diff = 0;
-			else if (ldiff == 1)
-				diff = 1;
-			else
-				diff += ldiff * 12;
-		}
-		
-		int q1diff = modDiff(iHash1[TLSH_CHECKSUM_LEN + 1] & 0xf, iHash2[TLSH_CHECKSUM_LEN + 1] & 0xf, RANGE_QRATIO);
-		if (q1diff <= 1)
-			diff += q1diff;
-		else		   
-			diff += (q1diff - 1) * 12;
-		
-		int q2diff = modDiff(iHash1[TLSH_CHECKSUM_LEN + 1] >> 4, iHash2[TLSH_CHECKSUM_LEN + 1] >> 4, RANGE_QRATIO);
-		if (q2diff <= 1)
-			diff += q2diff;
-		else
-			diff += (q2diff - 1) * 12;
-		
-		for (int k = 0; k < TLSH_CHECKSUM_LEN; k++) {	
-			if (iHash1[k] != iHash2[k]) {
-				diff++;
-				break;
-			}
-		}
-		
-		diff += hDistance(Arrays.copyOfRange(iHash1, TLSH_CHECKSUM_LEN + 2, iHash1.length), Arrays.copyOfRange(iHash2, TLSH_CHECKSUM_LEN + 2, iHash2.length));
+		return totalDiff(lsh1, lsh2, lenDiff);
+	}
 	
-		return diff;
+	private static LshBinStruct fromTlshStr(String hash) {
+		LshBinStruct lshBinStruct = new LshBinStruct();
+		
+		int[] tmp = fromHex(hash);
+		int i = 0;
+		
+		lshBinStruct.checksum[i] = swapByte(tmp[i++]);
+		lshBinStruct.lValue = swapByte(tmp[i++]);		
+		lshBinStruct.Q = swapByte(tmp[i++]);
+		
+		int tmpCode[] = new int[CODE_SIZE];
+		for(int j=0;j<CODE_SIZE;j++) {
+			tmpCode[j] = (tmp[i + CODE_SIZE - 1 -j]);
+	    }
+		
+		lshBinStruct.tmpCode = tmpCode;
+		
+		return lshBinStruct;
 	}
 
 	public static void main(String [] args) {
@@ -588,10 +553,16 @@ public class TLSH {
 			ti3.finale();
 			System.out.println("hash3 = " + ti3.hash());
 			
+			System.out.println("Differences using totalDiff(hash1, has2, len): ");
+			
+			System.out.println("difference (same strings) = " + TLSH.totalDiff("09F05A198CC69A5A4F0F9380A9EE93F2B927CF42089EA74276DC5F0BB2D34E68114448", "09F05A198CC69A5A4F0F9380A9EE93F2B927CF42089EA74276DC5F0BB2D34E68114448", true));
+			System.out.println("difference (with len) = " + TLSH.totalDiff("09F05A198CC69A5A4F0F9380A9EE93F2B927CF42089EA74276DC5F0BB2D34E68114448", "301124198C869A5A4F0F9380A9AE92F2B9278F42089EA34272885F0FB2D34E6911444C", true));
+			System.out.println("difference (without len) = " + TLSH.totalDiff("09F05A198CC69A5A4F0F9380A9EE93F2B927CF42089EA74276DC5F0BB2D34E68114448", "301124198C869A5A4F0F9380A9AE92F2B9278F42089EA34272885F0FB2D34E6911444C", false));
 			
 			System.out.flush();
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
 	}
+	
 }
